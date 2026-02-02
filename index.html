@@ -598,6 +598,30 @@
       opacity: 0.3;
       margin-bottom: 1rem;
     }
+
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn-small {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      border-radius: 6px;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+      border: none;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: var(--bg-dark);
+      border: none;
+    }
   </style>
 </head>
 <body>
@@ -635,6 +659,7 @@
       <button class="tab" data-tab="accounts">Cuentas</button>
       <button class="tab" data-tab="fixed">Gastos Fijos</button>
       <button class="tab" data-tab="history">Historial</button>
+      <button class="tab" data-tab="settings">Configuración</button>
     </div>
 
     <!-- Cargar Gasto Tab -->
@@ -686,9 +711,6 @@
           <button type="submit" class="btn btn-primary" id="submitBtn">
             Guardar Gasto
           </button>
-          <button type="button" class="btn btn-secondary" id="analyzeBtn" style="margin-left: 1rem;">
-            🤖 Analizar Imagen
-          </button>
         </form>
       </div>
     </div>
@@ -706,6 +728,10 @@
             <div class="form-group">
               <label>Saldo Actual</label>
               <input type="number" id="accountBalance" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="form-group">
+              <label>Remuneración Diaria (%)</label>
+              <input type="number" id="accountInterest" step="0.01" placeholder="0.00" value="0">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">Agregar Cuenta</button>
@@ -759,6 +785,45 @@
         <div class="expense-list" id="expenseList"></div>
       </div>
     </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-content" id="settings">
+      <div class="card">
+        <h3>Configuración y Sincronización</h3>
+        
+        <div style="margin-bottom: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">Exportar/Importar Datos</h4>
+          <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
+            Exportá todos tus datos para compartir entre dispositivos o hacer backup.
+          </p>
+          <button class="btn btn-primary" id="exportBtn">
+            📤 Exportar Datos
+          </button>
+          <button class="btn btn-secondary" id="importBtn" style="margin-left: 1rem;">
+            📥 Importar Datos
+          </button>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">Actualización de Saldos</h4>
+          <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.875rem;">
+            Actualizá los saldos de todas las cuentas con remuneración diaria.
+          </p>
+          <button class="btn btn-primary" id="updateBalancesBtn">
+            🔄 Actualizar Saldos
+          </button>
+          <div id="lastUpdateInfo" style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;"></div>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 2rem; margin-top: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--text-secondary);">Peligro</h4>
+          <button class="btn" style="background: var(--danger); color: white;" id="clearDataBtn">
+            🗑️ Borrar Todos los Datos
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -782,6 +847,7 @@
     let accounts = Storage.get('accounts') || [];
     let expenses = Storage.get('expenses') || [];
     let fixedExpenses = Storage.get('fixedExpenses') || [];
+    let lastUpdate = Storage.get('lastUpdate') || new Date().toISOString();
     let currentFilter = 'all';
 
     // Initialize
@@ -796,6 +862,11 @@
       populateAccountSelects();
       initializeTabs();
       initializeFileUpload();
+      initializeSettings();
+      displayLastUpdate();
+      
+      // Auto-update balances on load
+      autoUpdateBalances();
     }
 
     // Tabs
@@ -830,95 +901,6 @@
           reader.readAsDataURL(file);
         }
       });
-
-      document.getElementById('analyzeBtn').addEventListener('click', analyzeImage);
-    }
-
-    // Analyze Image with Claude API
-    async function analyzeImage() {
-      const fileInput = document.getElementById('receiptImage');
-      const analyzeBtn = document.getElementById('analyzeBtn');
-      
-      if (!fileInput.files[0]) {
-        showToast('Por favor seleccioná una imagen primero', 'error');
-        return;
-      }
-
-      analyzeBtn.disabled = true;
-      analyzeBtn.innerHTML = '<span class="loading"></span> Analizando...';
-
-      try {
-        const file = fileInput.files[0];
-        const base64 = await fileToBase64(file);
-
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: {
-                    type: 'base64',
-                    media_type: file.type,
-                    data: base64
-                  }
-                },
-                {
-                  type: 'text',
-                  text: `Analiza este comprobante de pago y extrae la siguiente información en formato JSON:
-{
-  "monto": "monto total del pago (solo número, sin símbolos)",
-  "comercio": "nombre del comercio o destinatario",
-  "fecha": "fecha en formato YYYY-MM-DD si está disponible",
-  "descripcion": "breve descripción del pago"
-}
-
-Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON, sin texto adicional.`
-                }
-              ]
-            }]
-          })
-        });
-
-        const data = await response.json();
-        const text = data.content[0].text;
-        
-        // Extract JSON from response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          
-          // Fill form
-          if (parsed.monto) document.getElementById('amount').value = parsed.monto;
-          if (parsed.comercio) document.getElementById('merchant').value = parsed.comercio;
-          if (parsed.fecha) document.getElementById('date').value = parsed.fecha;
-          if (parsed.descripcion) document.getElementById('description').value = parsed.descripcion;
-
-          showToast('¡Información extraída correctamente!', 'success');
-        }
-      } catch (error) {
-        console.error('Error analyzing image:', error);
-        showToast('Error al analizar la imagen', 'error');
-      } finally {
-        analyzeBtn.disabled = false;
-        analyzeBtn.innerHTML = '🤖 Analizar Imagen';
-      }
-    }
-
-    function fileToBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
     }
 
     // Account Management
@@ -926,12 +908,15 @@ Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON,
       e.preventDefault();
       const name = document.getElementById('accountName').value;
       const balance = parseFloat(document.getElementById('accountBalance').value);
+      const dailyInterest = parseFloat(document.getElementById('accountInterest').value) || 0;
 
       const account = {
         id: Date.now(),
         name,
         balance,
-        initialBalance: balance
+        initialBalance: balance,
+        dailyInterest,
+        lastInterestUpdate: new Date().toISOString()
       };
 
       accounts.push(account);
@@ -958,6 +943,15 @@ Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON,
             <h4>${acc.name}</h4>
             <div class="expense-meta">
               <span>Saldo inicial: $${acc.initialBalance.toFixed(2)}</span>
+              ${acc.dailyInterest > 0 ? `<span>Remuneración: ${acc.dailyInterest}% diario</span>` : ''}
+            </div>
+            <div class="action-buttons">
+              <button class="btn btn-small btn-success" onclick="updateAccountBalance(${acc.id})">
+                🔄 Actualizar
+              </button>
+              <button class="btn btn-small btn-secondary" onclick="editAccountBalance(${acc.id})">
+                ✏️ Editar Saldo
+              </button>
             </div>
           </div>
           <div class="expense-amount">$${acc.balance.toFixed(2)}</div>
@@ -1024,6 +1018,8 @@ Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON,
 
       list.innerHTML = fixedExpenses.map(exp => {
         const account = accounts.find(a => a.id === exp.accountId);
+        const isPaid = exp.paidThisMonth && new Date(exp.paidThisMonth).getMonth() === new Date().getMonth();
+        
         return `
           <div class="expense-item">
             <div class="expense-icon">📅</div>
@@ -1032,6 +1028,17 @@ Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON,
               <div class="expense-meta">
                 <span>${account?.name || 'Cuenta eliminada'}</span>
                 <span>Día ${exp.day}</span>
+                ${isPaid ? '<span style="color: var(--success)">✓ Pagado este mes</span>' : ''}
+              </div>
+              <div class="action-buttons">
+                ${!isPaid ? `
+                  <button class="btn btn-small btn-success" onclick="payFixedExpense(${exp.id})">
+                    💰 Pagar
+                  </button>
+                ` : ''}
+                <button class="btn btn-small btn-danger" onclick="deleteFixedExpense(${exp.id})">
+                  🗑️ Eliminar
+                </button>
               </div>
             </div>
             <div class="expense-amount">$${exp.amount.toFixed(2)}</div>
@@ -1155,6 +1162,235 @@ Si no podés identificar algún dato, dejalo vacío. Respondé SOLO con el JSON,
         toast.style.animation = 'slideUp 0.3s ease-out reverse';
         setTimeout(() => toast.remove(), 300);
       }, 3000);
+    }
+
+    // Balance Updates with Daily Interest
+    function calculateDaysElapsed(lastUpdate) {
+      const last = new Date(lastUpdate);
+      const now = new Date();
+      const diffTime = Math.abs(now - last);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays;
+    }
+
+    function updateAccountBalance(accountId) {
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
+      
+      if (daysElapsed > 0 && account.dailyInterest > 0) {
+        const interestRate = account.dailyInterest / 100;
+        const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
+        const earned = newBalance - account.balance;
+        
+        account.balance = newBalance;
+        account.lastInterestUpdate = new Date().toISOString();
+        Storage.set('accounts', accounts);
+        
+        renderAccounts();
+        updateDashboard();
+        showToast(`Saldo actualizado: +$${earned.toFixed(2)} por ${daysElapsed} día(s)`, 'success');
+      } else {
+        showToast('No hay días pendientes de actualización o no tiene remuneración', 'error');
+      }
+    }
+
+    function autoUpdateBalances() {
+      let updated = false;
+      accounts.forEach(account => {
+        if (account.dailyInterest > 0) {
+          const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
+          if (daysElapsed > 0) {
+            const interestRate = account.dailyInterest / 100;
+            account.balance = account.balance * Math.pow(1 + interestRate, daysElapsed);
+            account.lastInterestUpdate = new Date().toISOString();
+            updated = true;
+          }
+        }
+      });
+      
+      if (updated) {
+        Storage.set('accounts', accounts);
+        lastUpdate = new Date().toISOString();
+        Storage.set('lastUpdate', lastUpdate);
+        renderAccounts();
+        updateDashboard();
+      }
+    }
+
+    function editAccountBalance(accountId) {
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      const newBalance = prompt(`Ingresá el nuevo saldo para ${account.name}:`, account.balance);
+      if (newBalance !== null && !isNaN(newBalance)) {
+        account.balance = parseFloat(newBalance);
+        account.lastInterestUpdate = new Date().toISOString();
+        Storage.set('accounts', accounts);
+        renderAccounts();
+        updateDashboard();
+        showToast('Saldo actualizado manualmente', 'success');
+      }
+    }
+
+    // Fixed Expense Management
+    function payFixedExpense(expenseId) {
+      const fixedExp = fixedExpenses.find(e => e.id === expenseId);
+      if (!fixedExp) return;
+
+      const account = accounts.find(a => a.id === fixedExp.accountId);
+      if (!account) {
+        showToast('La cuenta asociada no existe', 'error');
+        return;
+      }
+
+      if (account.balance < fixedExp.amount) {
+        if (!confirm(`El saldo de ${account.name} es insuficiente ($${account.balance.toFixed(2)}). ¿Continuar igual?`)) {
+          return;
+        }
+      }
+
+      // Create expense record
+      const expense = {
+        id: Date.now(),
+        amount: fixedExp.amount,
+        accountId: fixedExp.accountId,
+        merchant: 'Gasto Fijo',
+        date: new Date().toISOString().split('T')[0],
+        description: fixedExp.description,
+        image: null,
+        timestamp: new Date().toISOString(),
+        isFixed: true
+      };
+
+      expenses.push(expense);
+      Storage.set('expenses', expenses);
+
+      // Update account balance
+      account.balance -= fixedExp.amount;
+      Storage.set('accounts', accounts);
+
+      // Mark as paid this month
+      fixedExp.paidThisMonth = new Date().toISOString();
+      Storage.set('fixedExpenses', fixedExpenses);
+
+      renderFixedExpenses();
+      renderExpenses();
+      renderAccounts();
+      updateDashboard();
+      showToast('Gasto fijo pagado exitosamente', 'success');
+    }
+
+    function deleteFixedExpense(expenseId) {
+      if (!confirm('¿Estás seguro de eliminar este gasto fijo?')) return;
+
+      fixedExpenses = fixedExpenses.filter(e => e.id !== expenseId);
+      Storage.set('fixedExpenses', fixedExpenses);
+      renderFixedExpenses();
+      updateDashboard();
+      showToast('Gasto fijo eliminado', 'success');
+    }
+
+    // Export/Import Functions
+    function initializeSettings() {
+      document.getElementById('exportBtn').addEventListener('click', exportData);
+      document.getElementById('importBtn').addEventListener('click', () => {
+        document.getElementById('importFile').click();
+      });
+      document.getElementById('importFile').addEventListener('change', importData);
+      document.getElementById('updateBalancesBtn').addEventListener('click', manualUpdateBalances);
+      document.getElementById('clearDataBtn').addEventListener('click', clearAllData);
+    }
+
+    function exportData() {
+      const data = {
+        accounts,
+        expenses,
+        fixedExpenses,
+        lastUpdate,
+        exportDate: new Date().toISOString(),
+        version: '1.0'
+      };
+
+      const dataStr = JSON.stringify(data, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `trackr-backup-${new Date().toISOString().split('T')[0]}.json`;
+      link.click();
+      
+      URL.revokeObjectURL(url);
+      showToast('Datos exportados correctamente', 'success');
+    }
+
+    function importData(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          
+          if (!confirm('¿Importar estos datos? Esto REEMPLAZARÁ todos los datos actuales.')) {
+            return;
+          }
+
+          accounts = data.accounts || [];
+          expenses = data.expenses || [];
+          fixedExpenses = data.fixedExpenses || [];
+          lastUpdate = data.lastUpdate || new Date().toISOString();
+
+          Storage.set('accounts', accounts);
+          Storage.set('expenses', expenses);
+          Storage.set('fixedExpenses', fixedExpenses);
+          Storage.set('lastUpdate', lastUpdate);
+
+          renderAccounts();
+          renderFixedExpenses();
+          renderExpenses();
+          updateDashboard();
+          populateAccountSelects();
+          displayLastUpdate();
+
+          showToast('Datos importados correctamente', 'success');
+        } catch (error) {
+          showToast('Error al importar datos: archivo inválido', 'error');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }
+
+    function manualUpdateBalances() {
+      const btn = document.getElementById('updateBalancesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span> Actualizando...';
+
+      setTimeout(() => {
+        autoUpdateBalances();
+        displayLastUpdate();
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Actualizar Saldos';
+        showToast('Saldos actualizados correctamente', 'success');
+      }, 500);
+    }
+
+    function displayLastUpdate() {
+      const info = document.getElementById('lastUpdateInfo');
+      const date = new Date(lastUpdate);
+      info.textContent = `Última actualización: ${date.toLocaleDateString('es-AR')} ${date.toLocaleTimeString('es-AR')}`;
+    }
+
+    function clearAllData() {
+      if (!confirm('⚠️ ¿ESTÁS SEGURO? Esto eliminará TODOS los datos de forma PERMANENTE.')) return;
+      if (!confirm('Esta acción no se puede deshacer. ¿Continuar?')) return;
+
+      localStorage.clear();
+      location.reload();
     }
 
     // Initialize app
