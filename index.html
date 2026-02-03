@@ -570,13 +570,31 @@
       }
 
       .expense-item {
-        grid-template-columns: auto 1fr;
+        grid-template-columns: 1fr;
         gap: 1rem;
+        padding: 1.25rem;
+      }
+
+      .expense-icon {
+        display: none;
       }
 
       .expense-amount {
-        grid-column: 2;
-        text-align: right;
+        text-align: left;
+        margin-top: 0.5rem;
+      }
+
+      .action-buttons {
+        width: 100%;
+      }
+
+      .btn-small {
+        flex: 1;
+        min-width: calc(50% - 0.25rem);
+        font-size: 0.8rem;
+        padding: 0.625rem 0.5rem;
+        justify-content: center;
+        text-align: center;
       }
 
       .form-row {
@@ -628,6 +646,7 @@
 
     .action-buttons {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.5rem;
       margin-top: 0.5rem;
     }
@@ -636,6 +655,7 @@
       padding: 0.5rem 1rem;
       font-size: 0.875rem;
       border-radius: 6px;
+      white-space: nowrap;
     }
 
     .btn-danger {
@@ -1146,6 +1166,9 @@
               <button class="btn btn-small btn-secondary" onclick="editAccountBalance(${acc.id})">
                 ✏️ Editar
               </button>
+              <button class="btn btn-small btn-danger" onclick="deleteAccount(${acc.id})">
+                🗑️
+              </button>
             </div>
           </div>
           <div class="expense-amount">$${acc.balance.toFixed(2)}</div>
@@ -1442,6 +1465,39 @@
       } else if (amount !== null) {
         showToast('Monto inválido', 'error');
       }
+    }
+
+    function deleteAccount(accountId) {
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      if (!confirm(`¿Estás seguro de eliminar la cuenta "${account.name}"?\n\nEsto también eliminará todos los gastos asociados a esta cuenta.`)) {
+        return;
+      }
+
+      // Remove account
+      accounts = accounts.filter(a => a.id !== accountId);
+      Storage.set('accounts', accounts);
+
+      // Remove expenses associated with this account
+      expenses = expenses.filter(e => e.accountId !== accountId);
+      Storage.set('expenses', expenses);
+
+      // Remove fixed expenses associated with this account
+      fixedExpenses = fixedExpenses.filter(e => e.accountId !== accountId);
+      Storage.set('fixedExpenses', fixedExpenses);
+
+      // Reset filter if it was for this account
+      if (currentFilter === accountId.toString()) {
+        currentFilter = 'all';
+      }
+
+      renderAccounts();
+      renderExpenses();
+      renderFixedExpenses();
+      updateDashboard();
+      populateAccountSelects();
+      showToast('Cuenta eliminada exitosamente', 'success');
     }
 
     // Fixed Expense Management
