@@ -649,6 +649,126 @@
       color: var(--bg-dark);
       border: none;
     }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      animation: slideUp 0.3s ease-out;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.5rem;
+      color: var(--text-primary);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .modal-close:hover {
+      background: var(--bg-input);
+      color: var(--text-primary);
+    }
+
+    .interest-summary {
+      margin-bottom: 1.5rem;
+    }
+
+    .interest-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+    }
+
+    .interest-item-name {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .interest-item-value {
+      color: var(--success);
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .template-list {
+      margin-top: 1rem;
+    }
+
+    .template-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .template-item:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .template-name {
+      color: var(--text-primary);
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
@@ -776,7 +896,15 @@
           <div class="form-row">
             <div class="form-group">
               <label>Descripción</label>
-              <input type="text" id="fixedDescription" placeholder="Ej: Alquiler" required>
+              <div style="display: flex; gap: 0.5rem;">
+                <select id="fixedDescriptionTemplate" style="flex: 1;">
+                  <option value="">Seleccionar plantilla...</option>
+                </select>
+                <button type="button" class="btn btn-small btn-secondary" onclick="manageTemplates()" style="white-space: nowrap;">
+                  ⚙️
+                </button>
+              </div>
+              <input type="text" id="fixedDescription" placeholder="Ej: Alquiler" required style="margin-top: 0.5rem;">
             </div>
             <div class="form-group">
               <label>Monto</label>
@@ -853,6 +981,38 @@
     </div>
   </div>
 
+  <!-- Daily Summary Modal -->
+  <div class="modal" id="dailySummaryModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>💰 Remuneración Diaria</h3>
+        <button class="modal-close" onclick="closeDailySummary()">×</button>
+      </div>
+      <div id="dailySummaryContent"></div>
+      <button class="btn btn-primary" onclick="closeDailySummary()" style="width: 100%; margin-top: 1rem;">
+        Entendido
+      </button>
+    </div>
+  </div>
+
+  <!-- Template Manager Modal -->
+  <div class="modal" id="templateModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>⚙️ Gestionar Plantillas</h3>
+        <button class="modal-close" onclick="closeTemplateModal()">×</button>
+      </div>
+      <div class="form-group">
+        <label>Nueva Plantilla</label>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="text" id="newTemplate" placeholder="Ej: Alquiler">
+          <button class="btn btn-primary btn-small" onclick="addTemplate()">Agregar</button>
+        </div>
+      </div>
+      <div class="template-list" id="templateList"></div>
+    </div>
+  </div>
+
   <script>
     // Storage Manager
     const Storage = {
@@ -874,7 +1034,9 @@
     let accounts = Storage.get('accounts') || [];
     let expenses = Storage.get('expenses') || [];
     let fixedExpenses = Storage.get('fixedExpenses') || [];
+    let expenseTemplates = Storage.get('expenseTemplates') || ['Alquiler', 'Servicios', 'Internet', 'Teléfono', 'Luz', 'Gas', 'Agua'];
     let lastUpdate = Storage.get('lastUpdate') || new Date().toISOString();
+    let lastDailyCheck = Storage.get('lastDailyCheck') || null;
     let currentFilter = 'all';
 
     // Initialize
@@ -887,13 +1049,15 @@
       renderExpenses();
       updateDashboard();
       populateAccountSelects();
+      populateTemplates();
       initializeTabs();
       initializeFileUpload();
       initializeSettings();
+      initializeTemplateSelector();
       displayLastUpdate();
       
-      // Auto-update balances on load
-      autoUpdateBalances();
+      // Check for daily summary
+      checkDailySummary();
     }
 
     // Tabs
@@ -973,11 +1137,14 @@
               ${acc.dailyInterest > 0 ? `<span>Remuneración: ${acc.dailyInterest}% diario</span>` : ''}
             </div>
             <div class="action-buttons">
+              <button class="btn btn-small btn-success" onclick="depositToAccount(${acc.id})">
+                💵 Ingresar
+              </button>
               <button class="btn btn-small btn-success" onclick="updateAccountBalance(${acc.id})">
                 🔄 Actualizar
               </button>
               <button class="btn btn-small btn-secondary" onclick="editAccountBalance(${acc.id})">
-                ✏️ Editar Saldo
+                ✏️ Editar
               </button>
             </div>
           </div>
@@ -1261,6 +1428,22 @@
       }
     }
 
+    function depositToAccount(accountId) {
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      const amount = prompt(`Ingresá el monto a depositar en ${account.name}:`);
+      if (amount !== null && !isNaN(amount) && parseFloat(amount) > 0) {
+        account.balance += parseFloat(amount);
+        Storage.set('accounts', accounts);
+        renderAccounts();
+        updateDashboard();
+        showToast(`Depositado: +$${parseFloat(amount).toFixed(2)}`, 'success');
+      } else if (amount !== null) {
+        showToast('Monto inválido', 'error');
+      }
+    }
+
     // Fixed Expense Management
     function payFixedExpense(expenseId) {
       const fixedExp = fixedExpenses.find(e => e.id === expenseId);
@@ -1418,6 +1601,177 @@
 
       localStorage.clear();
       location.reload();
+    }
+
+    // Daily Summary Check
+    function checkDailySummary() {
+      const today = new Date().toISOString().split('T')[0];
+      
+      if (lastDailyCheck !== today) {
+        // Calculate interest updates
+        let updates = [];
+        let totalEarned = 0;
+        
+        accounts.forEach(account => {
+          if (account.dailyInterest > 0) {
+            const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
+            if (daysElapsed > 0) {
+              const interestRate = account.dailyInterest / 100;
+              const oldBalance = account.balance;
+              const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
+              const earned = newBalance - oldBalance;
+              
+              account.balance = newBalance;
+              account.lastInterestUpdate = new Date().toISOString();
+              
+              updates.push({
+                name: account.name,
+                earned: earned,
+                days: daysElapsed,
+                newBalance: newBalance
+              });
+              
+              totalEarned += earned;
+            }
+          }
+        });
+        
+        if (updates.length > 0) {
+          Storage.set('accounts', accounts);
+          lastUpdate = new Date().toISOString();
+          Storage.set('lastUpdate', lastUpdate);
+          
+          // Show modal
+          showDailySummary(updates, totalEarned);
+        }
+        
+        // Update last check
+        lastDailyCheck = today;
+        Storage.set('lastDailyCheck', lastDailyCheck);
+        
+        renderAccounts();
+        updateDashboard();
+      }
+    }
+
+    function showDailySummary(updates, totalEarned) {
+      const content = document.getElementById('dailySummaryContent');
+      
+      let html = `
+        <div class="interest-summary">
+          <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            ¡Buenos días! Estos son tus nuevos saldos actualizados:
+          </p>
+      `;
+      
+      updates.forEach(update => {
+        html += `
+          <div class="interest-item">
+            <div>
+              <div class="interest-item-name">${update.name}</div>
+              <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;">
+                ${update.days} día(s)
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div class="interest-item-value">+$${update.earned.toFixed(2)}</div>
+              <div style="font-size: 0.875rem; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;">
+                $${update.newBalance.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+      
+      html += `
+        </div>
+        <div style="padding: 1rem; background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 212, 255, 0.1)); border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
+          <div style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Total ganado</div>
+          <div style="font-size: 2rem; font-weight: 700; color: var(--success); font-family: 'JetBrains Mono', monospace;">
+            +$${totalEarned.toFixed(2)}
+          </div>
+        </div>
+      `;
+      
+      content.innerHTML = html;
+      document.getElementById('dailySummaryModal').classList.add('active');
+    }
+
+    function closeDailySummary() {
+      document.getElementById('dailySummaryModal').classList.remove('active');
+    }
+
+    // Template Management
+    function populateTemplates() {
+      const select = document.getElementById('fixedDescriptionTemplate');
+      select.innerHTML = '<option value="">Seleccionar plantilla...</option>' +
+        expenseTemplates.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
+
+    function initializeTemplateSelector() {
+      document.getElementById('fixedDescriptionTemplate').addEventListener('change', (e) => {
+        if (e.target.value) {
+          document.getElementById('fixedDescription').value = e.target.value;
+        }
+      });
+    }
+
+    function manageTemplates() {
+      renderTemplateList();
+      document.getElementById('templateModal').classList.add('active');
+    }
+
+    function closeTemplateModal() {
+      document.getElementById('templateModal').classList.remove('active');
+      document.getElementById('newTemplate').value = '';
+    }
+
+    function renderTemplateList() {
+      const list = document.getElementById('templateList');
+      
+      if (expenseTemplates.length === 0) {
+        list.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">No hay plantillas</p>';
+        return;
+      }
+      
+      list.innerHTML = expenseTemplates.map((template, index) => `
+        <div class="template-item">
+          <span class="template-name">${template}</span>
+          <button class="btn btn-small btn-danger" onclick="deleteTemplate(${index})">
+            🗑️
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function addTemplate() {
+      const input = document.getElementById('newTemplate');
+      const value = input.value.trim();
+      
+      if (!value) {
+        showToast('Ingresá un nombre para la plantilla', 'error');
+        return;
+      }
+      
+      if (expenseTemplates.includes(value)) {
+        showToast('Esta plantilla ya existe', 'error');
+        return;
+      }
+      
+      expenseTemplates.push(value);
+      Storage.set('expenseTemplates', expenseTemplates);
+      populateTemplates();
+      renderTemplateList();
+      input.value = '';
+      showToast('Plantilla agregada', 'success');
+    }
+
+    function deleteTemplate(index) {
+      expenseTemplates.splice(index, 1);
+      Storage.set('expenseTemplates', expenseTemplates);
+      populateTemplates();
+      renderTemplateList();
+      showToast('Plantilla eliminada', 'success');
     }
 
     // Initialize app
