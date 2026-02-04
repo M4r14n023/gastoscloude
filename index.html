@@ -1288,10 +1288,10 @@
       expenses.push(expense);
       Storage.set('expenses', expenses);
 
-      // Update account balance
+      // Update account balance with rounding to 2 decimals
       const account = accounts.find(a => a.id === accountId);
       if (account) {
-        account.balance -= amount;
+        account.balance = parseFloat((account.balance - amount).toFixed(2));
         Storage.set('accounts', accounts);
       }
 
@@ -1385,8 +1385,14 @@
     function calculateDaysElapsed(lastUpdate) {
       const last = new Date(lastUpdate);
       const now = new Date();
-      const diffTime = Math.abs(now - last);
+      
+      // Reset time to midnight for calendar day comparison
+      const lastDate = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+      const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      const diffTime = nowDate - lastDate;
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
       return diffDays;
     }
 
@@ -1401,7 +1407,8 @@
         const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
         const earned = newBalance - account.balance;
         
-        account.balance = newBalance;
+        // Round to 2 decimals
+        account.balance = parseFloat(newBalance.toFixed(2));
         account.lastInterestUpdate = new Date().toISOString();
         Storage.set('accounts', accounts);
         
@@ -1442,7 +1449,8 @@
 
       const newBalance = prompt(`Ingresá el nuevo saldo para ${account.name}:`, account.balance);
       if (newBalance !== null && !isNaN(newBalance)) {
-        account.balance = parseFloat(newBalance);
+        // Round to 2 decimals
+        account.balance = parseFloat(parseFloat(newBalance).toFixed(2));
         account.lastInterestUpdate = new Date().toISOString();
         Storage.set('accounts', accounts);
         renderAccounts();
@@ -1457,7 +1465,8 @@
 
       const amount = prompt(`Ingresá el monto a depositar en ${account.name}:`);
       if (amount !== null && !isNaN(amount) && parseFloat(amount) > 0) {
-        account.balance += parseFloat(amount);
+        // Round to 2 decimals
+        account.balance = parseFloat((account.balance + parseFloat(amount)).toFixed(2));
         Storage.set('accounts', accounts);
         renderAccounts();
         updateDashboard();
@@ -1533,8 +1542,8 @@
       expenses.push(expense);
       Storage.set('expenses', expenses);
 
-      // Update account balance
-      account.balance -= fixedExp.amount;
+      // Update account balance with rounding to 2 decimals
+      account.balance = parseFloat((account.balance - fixedExp.amount).toFixed(2));
       Storage.set('accounts', accounts);
 
       // Mark as paid this month
@@ -1664,10 +1673,11 @@
       const today = new Date().toISOString().split('T')[0];
       
       if (lastDailyCheck !== today) {
-        // Calculate interest updates
+        // Calculate interest updates for ALL accounts
         let updates = [];
         let totalEarned = 0;
         
+        // Process each account independently
         accounts.forEach(account => {
           if (account.dailyInterest > 0) {
             const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
@@ -1677,14 +1687,15 @@
               const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
               const earned = newBalance - oldBalance;
               
-              account.balance = newBalance;
+              // Round to 2 decimals
+              account.balance = parseFloat(newBalance.toFixed(2));
               account.lastInterestUpdate = new Date().toISOString();
               
               updates.push({
                 name: account.name,
-                earned: earned,
+                earned: parseFloat(earned.toFixed(2)),
                 days: daysElapsed,
-                newBalance: newBalance
+                newBalance: parseFloat(newBalance.toFixed(2))
               });
               
               totalEarned += earned;
@@ -1692,21 +1703,23 @@
           }
         });
         
+        // Save all account updates
         if (updates.length > 0) {
           Storage.set('accounts', accounts);
           lastUpdate = new Date().toISOString();
           Storage.set('lastUpdate', lastUpdate);
           
-          // Show modal
-          showDailySummary(updates, totalEarned);
+          // Show modal with all updates
+          showDailySummary(updates, parseFloat(totalEarned.toFixed(2)));
+          
+          // Update UI
+          renderAccounts();
+          updateDashboard();
         }
         
-        // Update last check
+        // Mark day as checked (always, even if no updates)
         lastDailyCheck = today;
         Storage.set('lastDailyCheck', lastDailyCheck);
-        
-        renderAccounts();
-        updateDashboard();
       }
     }
 
