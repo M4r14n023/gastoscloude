@@ -789,6 +789,48 @@
       color: var(--text-primary);
       font-size: 0.95rem;
     }
+
+    .tna-item {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .tna-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .tna-item-name {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .tna-input-group {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .tna-input {
+      flex: 1;
+      padding: 0.5rem;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .tna-input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
   </style>
 </head>
 <body>
@@ -897,8 +939,8 @@
               <input type="number" id="accountBalance" step="0.01" placeholder="0.00" required>
             </div>
             <div class="form-group">
-              <label>Remuneración Diaria (%)</label>
-              <input type="number" id="accountInterest" step="0.01" placeholder="0.00" value="0">
+              <label>TNA Actual (%)</label>
+              <input type="number" id="accountTNA" step="0.01" placeholder="0.00" value="0">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">Agregar Cuenta</button>
@@ -1033,6 +1075,23 @@
     </div>
   </div>
 
+  <!-- Monthly TNA Check Modal -->
+  <div class="modal" id="monthlyTNAModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>📅 Nuevo Mes - Actualización de TNA</h3>
+        <button class="modal-close" onclick="closeMonthlyTNAModal()">×</button>
+      </div>
+      <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Comenzó un nuevo mes. Por favor, verificá y actualizá las TNA de tus cuentas si es necesario:
+      </p>
+      <div id="monthlyTNAList"></div>
+      <button class="btn btn-primary" onclick="saveMonthlyTNA()" style="width: 100%; margin-top: 1rem;">
+        Guardar Cambios
+      </button>
+    </div>
+  </div>
+
   <script>
     // Storage Manager
     const Storage = {
@@ -1057,6 +1116,7 @@
     let expenseTemplates = Storage.get('expenseTemplates') || ['Alquiler', 'Servicios', 'Internet', 'Teléfono', 'Luz', 'Gas', 'Agua'];
     let lastUpdate = Storage.get('lastUpdate') || new Date().toISOString();
     let lastDailyCheck = Storage.get('lastDailyCheck') || null;
+    let lastMonth = Storage.get('lastMonth') || null;
     let currentFilter = 'all';
 
     // Initialize
@@ -1076,7 +1136,10 @@
       initializeTemplateSelector();
       displayLastUpdate();
       
-      // Check for daily summary
+      // Check for month change first
+      checkMonthChange();
+      
+      // Then check for daily summary
       checkDailySummary();
     }
 
@@ -1119,14 +1182,14 @@
       e.preventDefault();
       const name = document.getElementById('accountName').value;
       const balance = parseFloat(document.getElementById('accountBalance').value);
-      const dailyInterest = parseFloat(document.getElementById('accountInterest').value) || 0;
+      const tna = parseFloat(document.getElementById('accountTNA').value) || 0;
 
       const account = {
         id: Date.now(),
         name,
-        balance,
-        initialBalance: balance,
-        dailyInterest,
+        balance: parseFloat(balance.toFixed(2)),
+        initialBalance: parseFloat(balance.toFixed(2)),
+        tna,
         lastInterestUpdate: new Date().toISOString()
       };
 
@@ -1154,7 +1217,7 @@
             <h4>${acc.name}</h4>
             <div class="expense-meta">
               <span>Saldo inicial: $${acc.initialBalance.toFixed(2)}</span>
-              ${acc.dailyInterest > 0 ? `<span>Remuneración: ${acc.dailyInterest}% diario</span>` : ''}
+              ${acc.tna > 0 ? `<span>TNA: ${acc.tna}%</span>` : ''}
             </div>
             <div class="action-buttons">
               <button class="btn btn-small btn-success" onclick="depositToAccount(${acc.id})">
@@ -1166,6 +1229,11 @@
               <button class="btn btn-small btn-secondary" onclick="editAccountBalance(${acc.id})">
                 ✏️ Editar
               </button>
+              ${acc.tna > 0 ? `
+                <button class="btn btn-small btn-secondary" onclick="modifyTNA(${acc.id})">
+                  📊 TNA
+                </button>
+              ` : ''}
               <button class="btn btn-small btn-danger" onclick="deleteAccount(${acc.id})">
                 🗑️
               </button>
@@ -1402,9 +1470,10 @@
 
       const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
       
-      if (daysElapsed > 0 && account.dailyInterest > 0) {
-        const interestRate = account.dailyInterest / 100;
-        const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
+      if (daysElapsed > 0 && account.tna > 0) {
+        // TNA formula: Daily Interest = (Balance * (TNA / 100)) / 365
+        const dailyRate = (account.tna / 100) / 365;
+        const newBalance = account.balance * Math.pow(1 + dailyRate, daysElapsed);
         const earned = newBalance - account.balance;
         
         // Round to 2 decimals
@@ -1416,7 +1485,7 @@
         updateDashboard();
         showToast(`Saldo actualizado: +$${earned.toFixed(2)} por ${daysElapsed} día(s)`, 'success');
       } else {
-        showToast('No hay días pendientes de actualización o no tiene remuneración', 'error');
+        showToast('No hay días pendientes de actualización o no tiene TNA configurada', 'error');
       }
     }
 
@@ -1679,12 +1748,13 @@
         
         // Process each account independently
         accounts.forEach(account => {
-          if (account.dailyInterest > 0) {
+          if (account.tna > 0) {
             const daysElapsed = calculateDaysElapsed(account.lastInterestUpdate || lastUpdate);
             if (daysElapsed > 0) {
-              const interestRate = account.dailyInterest / 100;
+              // TNA formula: Daily Interest = (Balance * (TNA / 100)) / 365
+              const dailyRate = (account.tna / 100) / 365;
               const oldBalance = account.balance;
-              const newBalance = account.balance * Math.pow(1 + interestRate, daysElapsed);
+              const newBalance = account.balance * Math.pow(1 + dailyRate, daysElapsed);
               const earned = newBalance - oldBalance;
               
               // Round to 2 decimals
@@ -1841,6 +1911,93 @@
       populateTemplates();
       renderTemplateList();
       showToast('Plantilla eliminada', 'success');
+    }
+
+    // Month Change Detection and TNA Management
+    function checkMonthChange() {
+      const now = new Date();
+      const currentMonth = now.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+      
+      if (lastMonth && lastMonth !== currentMonth) {
+        // New month detected
+        const remuneratedAccounts = accounts.filter(acc => acc.tna > 0);
+        
+        if (remuneratedAccounts.length > 0) {
+          showMonthlyTNAModal(remuneratedAccounts);
+        }
+      }
+      
+      // Update last month
+      if (!lastMonth) {
+        lastMonth = currentMonth;
+        Storage.set('lastMonth', lastMonth);
+      }
+    }
+
+    function showMonthlyTNAModal(remuneratedAccounts) {
+      const list = document.getElementById('monthlyTNAList');
+      
+      list.innerHTML = remuneratedAccounts.map(acc => `
+        <div class="tna-item">
+          <div class="tna-item-header">
+            <span class="tna-item-name">${acc.name}</span>
+          </div>
+          <div class="tna-input-group">
+            <label style="color: var(--text-secondary); font-size: 0.875rem; white-space: nowrap;">TNA actual:</label>
+            <input type="number" 
+                   class="tna-input" 
+                   id="tna-${acc.id}" 
+                   value="${acc.tna}" 
+                   step="0.01" 
+                   placeholder="0.00">
+            <span style="color: var(--text-secondary); font-size: 0.875rem;">%</span>
+          </div>
+        </div>
+      `).join('');
+      
+      document.getElementById('monthlyTNAModal').classList.add('active');
+    }
+
+    function saveMonthlyTNA() {
+      accounts.forEach(acc => {
+        if (acc.tna > 0) {
+          const input = document.getElementById(`tna-${acc.id}`);
+          if (input) {
+            const newTNA = parseFloat(input.value);
+            if (!isNaN(newTNA) && newTNA >= 0) {
+              acc.tna = newTNA;
+            }
+          }
+        }
+      });
+      
+      Storage.set('accounts', accounts);
+      
+      // Update lastMonth to current month
+      const now = new Date();
+      lastMonth = now.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+      Storage.set('lastMonth', lastMonth);
+      
+      closeMonthlyTNAModal();
+      renderAccounts();
+      showToast('TNA actualizada para el nuevo mes', 'success');
+    }
+
+    function closeMonthlyTNAModal() {
+      document.getElementById('monthlyTNAModal').classList.remove('active');
+    }
+
+    function modifyTNA(accountId) {
+      const account = accounts.find(a => a.id === accountId);
+      if (!account) return;
+
+      const newTNA = prompt(`Ingresá la nueva TNA para ${account.name} (%)`, account.tna);
+      if (newTNA !== null && !isNaN(newTNA)) {
+        account.tna = parseFloat(newTNA);
+        Storage.set('accounts', accounts);
+        renderAccounts();
+        showToast('TNA actualizada', 'success');
+      }
     }
 
     // Initialize app
